@@ -3,10 +3,10 @@ name: Gradle Build
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
     branches:
-      - main
+      - master
 
 jobs:
   build:
@@ -48,3 +48,15 @@ jobs:
     # 运行测试
     - name: Run tests
       run: ./gradlew test
+
+    # 上传编译产物
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+            **/build/libs/*.jar
+            **/build/outputs/**/*.aar
+
+
+            
