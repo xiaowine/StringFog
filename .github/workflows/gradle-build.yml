@@ -37,10 +37,6 @@ jobs:
     - name: Validate Gradle Wrapper
       run: ./gradlew wrapper --gradle-version 8.0
 
-    # 编译项目
-    - name: Build with Gradle
-      run: ./gradlew build
-
     # 编译 gradle-plugin 模块
     - name: Build Gradle Plugin
       run: ./gradlew :gradle-plugin:build
