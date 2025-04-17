@@ -39,7 +39,7 @@ jobs:
 
     # 编译 gradle-plugin 模块
     - name: Build Gradle Plugin
-      run: ./gradlew :gradle-plugin:build
+      run: ./gradlew :stringfog-gradle-plugin:build
 
     # 运行测试
     - name: Run tests
