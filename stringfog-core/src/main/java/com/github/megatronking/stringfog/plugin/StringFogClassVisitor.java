@@ -117,114 +117,117 @@ import java.util.List;
     }
 
     @Override
-    public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-        MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
-        if (mv == null || mIgnoreClass) {
-            return mv;
-        }
-        if ("<clinit>".equals(name)) {
-            isClInitExists = true;
-            // If clinit exists meaning the static fields (not final) would have be inited here.
-            mv = new MethodVisitor(Opcodes.ASM9, mv) {
+public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+    MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
+    if (mv == null || mIgnoreClass) {
+        return mv;
+    }
+    if ("<clinit>".equals(name)) {
+        isClInitExists = true;
+        mv = new MethodVisitor(Opcodes.ASM9, mv) {
+            private String lastStashCst;
 
-                private String lastStashCst;
+            @Override
+            public void visitCode() {
+                super.visitCode();
+                for (ClassStringField field : mStaticFinalFields) {
+                    if (!canEncrypted(field.value)) {
+                        continue;
+                    }
+                    encryptAndWrite(field.value, mv);
+                    super.visitFieldInsn(Opcodes.PUTSTATIC, mClassName, field.name, ClassStringField.STRING_DESC);
+                }
+            }
 
-                @Override
-                public void visitCode() {
-                    super.visitCode();
-                    // Here init static final fields.
-                    for (ClassStringField field : mStaticFinalFields) {
-                        if (!canEncrypted(field.value)) {
-                            continue;
+            @Override
+            public void visitLdcInsn(Object cst) {
+                if (cst instanceof String && canEncrypted((String) cst)) {
+                    lastStashCst = (String) cst;
+                    encryptAndWrite(lastStashCst, mv);
+                } else {
+                    lastStashCst = null;
+                    super.visitLdcInsn(cst);
+                }
+            }
+
+            @Override
+            public void visitFieldInsn(int opcode, String owner, String name, String desc) {
+                if (mClassName.equals(owner) && lastStashCst != null) {
+                    boolean isContain = false;
+                    for (ClassStringField field : mStaticFields) {
+                        if (field.name.equals(name)) {
+                            isContain = true;
+                            break;
                         }
-                        encryptAndWrite(field.value, mv);
-                        super.visitFieldInsn(Opcodes.PUTSTATIC, mClassName, field.name, ClassStringField.STRING_DESC);
                     }
-                }
-
-                @Override
-                public void visitLdcInsn(Object cst) {
-                    // Here init static or static final fields, but we must check field name int 'visitFieldInsn'
-                    if (cst instanceof String && canEncrypted((String) cst)) {
-                        lastStashCst = (String) cst;
-                        encryptAndWrite(lastStashCst, mv);
-                    } else {
-                        lastStashCst = null;
-                        super.visitLdcInsn(cst);
-                    }
-                }
-
-                @Override
-                public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-                    if (mClassName.equals(owner) && lastStashCst != null) {
-                        boolean isContain = false;
-                        for (ClassStringField field : mStaticFields) {
-                            if (field.name.equals(name)) {
-                                isContain = true;
+                    if (!isContain) {
+                        for (ClassStringField field : mStaticFinalFields) {
+                            if (field.name.equals(name) && field.value == null) {
+                                field.value = lastStashCst;
                                 break;
                             }
                         }
-                        if (!isContain) {
-                            for (ClassStringField field : mStaticFinalFields) {
-                                if (field.name.equals(name) && field.value == null) {
-                                    field.value = lastStashCst;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    lastStashCst = null;
-                    super.visitFieldInsn(opcode, owner, name, desc);
-                }
-            };
-
-        } else if ("<init>".equals(name)) {
-            // Here init final(not static) and normal fields
-            mv = new MethodVisitor(Opcodes.ASM9, mv) {
-                @Override
-                public void visitLdcInsn(Object cst) {
-                    // We don't care about whether the field is final or normal
-                    if (cst instanceof String && canEncrypted((String) cst)) {
-                        encryptAndWrite((String) cst, mv);
-                    } else {
-                        super.visitLdcInsn(cst);
                     }
                 }
-            };
-        } else {
-            mv = new MethodVisitor(Opcodes.ASM9, mv) {
-
-                @Override
-                public void visitLdcInsn(Object cst) {
-                    if (cst instanceof String && canEncrypted((String) cst)) {
-                        // If the value is a static final field
-                        for (ClassStringField field : mStaticFinalFields) {
-                            if (cst.equals(field.value)) {
-                                super.visitFieldInsn(Opcodes.GETSTATIC, mClassName, field.name, ClassStringField.STRING_DESC);
-                                return;
-                            }
-                        }
-                        // If the value is a final field (not static)
-                        for (ClassStringField field : mFinalFields) {
-                            // if the value of a final field is null, we ignore it
-                            if (cst.equals(field.value)) {
-                                super.visitVarInsn(Opcodes.ALOAD, 0);
-                                super.visitFieldInsn(Opcodes.GETFIELD, mClassName, field.name, "Ljava/lang/String;");
-                                return;
-                            }
-                        }
-                        // local variables
-                        encryptAndWrite((String) cst, mv);
-                        return;
-                    }
+                lastStashCst = null;
+                super.visitFieldInsn(opcode, owner, name, desc);
+            }
+        };
+    } else if ("<init>".equals(name)) {
+        mv = new MethodVisitor(Opcodes.ASM9, mv) {
+            @Override
+            public void visitLdcInsn(Object cst) {
+                if (cst instanceof String && canEncrypted((String) cst)) {
+                    encryptAndWrite((String) cst, mv);
+                } else {
                     super.visitLdcInsn(cst);
                 }
+            }
+        };
+    } else {
+        mv = new MethodVisitor(Opcodes.ASM9, mv) {
+            @Override
+            public void visitLdcInsn(Object cst) {
+                if (cst instanceof String && canEncrypted((String) cst)) {
+                    for (ClassStringField field : mStaticFinalFields) {
+                        if (cst.equals(field.value)) {
+                            super.visitFieldInsn(Opcodes.GETSTATIC, mClassName, field.name, ClassStringField.STRING_DESC);
+                            return;
+                        }
+                    }
+                    for (ClassStringField field : mFinalFields) {
+                        if (cst.equals(field.value)) {
+                            super.visitVarInsn(Opcodes.ALOAD, 0);
+                            super.visitFieldInsn(Opcodes.GETFIELD, mClassName, field.name, "Ljava/lang/String;");
+                            return;
+                        }
+                    }
+                    encryptAndWrite((String) cst, mv);
+                    return;
+                }
+                super.visitLdcInsn(cst);
+            }
 
-            };
-        }
-        return mv;
+            @Override
+            public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+                // 检查 invokedynamic 指令是否调用了 makeConcatWithConstants
+                if ("makeConcatWithConstants".equals(bsm.getName()) && bsmArgs != null) {
+                    for (Object arg : bsmArgs) {
+                        if (arg instanceof String && canEncrypted((String) arg)) {
+                            encryptAndWrite((String) arg, mv);
+                        } else {
+                            super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+                        }
+                    }
+                } else {
+                    super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+                }
+            }
+        };
     }
-
+    return mv;
+}
+    
     @Override
     public void visitEnd() {
         if (!mIgnoreClass && !isClInitExists && !mStaticFinalFields.isEmpty()) {
